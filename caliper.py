@@ -16,14 +16,17 @@ ap.add_argument("-w", "--ref_width", type=float, required=False,
 	help="width of the reference object in the image (in cm)")
 args = vars(ap.parse_args())
 
-
+webcam = True
+cap = cv2.VideoCapture(0)
+cap.set(10, 160)
+cap.set(3, 1920)
+cap.set(4, 1080)
 
 def midpoint (a, b):
     return (0.5*(a[0]+b[0]), 0.5*(a[1]+b[1]))
 
-def measure_image(image, ref_width):
+def measure_image(image, ref_width=1):
     # load the image, convert it to grayscale, and blur it slightly
-    image = cv2.imread(image)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
@@ -45,7 +48,7 @@ def measure_image(image, ref_width):
     refObj = None
 
     # loop over the contours individually
-    for c in range(len(cnts)):
+    for c in range(4):
             # if the contour is not sufficiently large, ignore it
             if cv2.contourArea(cnts[c]) < 100:
                     continue
@@ -90,33 +93,37 @@ def measure_image(image, ref_width):
             # distance from ref coords
             if c > 1:
                 #refCoords = np.vstack([boxO])
-                refCoords = np.vstack([(midpoint(boxO[0], boxO[1])),(midpoint(boxO[2], boxO[3])),(midpoint(boxO[2], boxO[3])), (midpoint(boxO[0], boxO[1]))])
+                refCoords = np.vstack([(midpoint(boxO[0], boxO[1])),(midpoint(boxO[2], boxO[3]))])
             #objCoords = np.vstack([boxN])
-            objCoords = np.vstack([(midpoint(boxN[0], boxN[1])),(midpoint(boxN[2], boxN[3])), (midpoint(boxN[0], boxN[1])), (midpoint(boxN[2], boxN[3]))])
+            objCoords = np.vstack([(midpoint(boxN[0], boxN[1])),(midpoint(boxN[2], boxN[3]))])
             
     # loop over the original points
             if c > 1 :
-                for ((xA, yA), (xB, yB), color) in zip(refCoords, objCoords, colors):
-                        newimg = image.copy()
-                        # draw circles corresponding to the current points and
-                        # connect them with a line
-                        cv2.circle(newimg, (int(xA), int(yA)), 5, color, -1)
-                        cv2.circle(newimg, (int(xB), int(yB)), 5, color, -1)
-                        cv2.line(newimg, (int(xA), int(yA)), (int(xB), int(yB)),
-                                color, 2)
-                        # compute the Euclidean distance between the coordinates,
-                        # and then convert the distance in pixels to distance in
-                        # units
-                        D = dist.euclidean((xA, yA), (xB, yB)) / refObj[2]
-                        (mX, mY) = midpoint((xA, yA), (xB, yB))
-                        cv2.putText(newimg, " {:.1f} cm".format(D), (int(mX), int(mY - 10)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
-                        # show the output image
-                        cv2.imshow("Image", newimg)
-                        cv2.waitKey(0)
+                #for ((xA, yA), (xB, yB), color) in zip(refCoords, objCoords, colors):
+                newimg = image.copy()
+                color = colors[1]
+                # draw circles corresponding to the current points and
+                # connect them with a line
+                cv2.circle(newimg, (int(refCoords[0][0]), int(refCoords[0][1])), 5, color, -1)
+                cv2.circle(newimg, (int(objCoords[0][0]), int(objCoords[0][1])), 5, color, -1)
+                cv2.line(newimg, (int(refCoords[0][0]), int(refCoords[0][1])), (int(objCoords[0][0]), int(objCoords[0][1])),
+                        color, 2)
+                # compute the Euclidean distance between the coordinates,
+                # and then convert the distance in pixels to distance in
+                # units
+                D = dist.euclidean((refCoords[0][0], refCoords[0][1]), (objCoords[0][0], objCoords[0][1])) / refObj[2]
+                (mX, mY) = midpoint((refCoords[0][1], refCoords[0][1]), (objCoords[0][0], objCoords[0][1]))
+                cv2.putText(newimg, " {:.1f} cm".format(D), (int(mX), int(mY - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+                # show the output image
+                cv2.imshow("Image", newimg)
+                cv2.waitKey(0)
                 
 
-if __name__ == '__main__':
-    measure_image(args["image"], args["ref_width"])
+while(1):
+    if not webcam: image = image = cv2.imread(args["image"])
+    else: image = success, image = cap.read()
+    measure_image(image) 
+    
 
 
