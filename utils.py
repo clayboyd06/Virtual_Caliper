@@ -2,7 +2,9 @@ import cv2
 from scipy.spatial import distance as dist
 import numpy as np
 
-'''
+## TODO play with threshhold settings to get best canny for the printer tips
+def getConts(img, cThr = [100,150], showCanny=False, minArea=1000, filter =0, draw=False):
+    '''
     getConts uses canny edge detection to get the contours of an image.
 
     input parameters:
@@ -16,9 +18,7 @@ import numpy as np
     returns the image data and an array called finalContours which contains the data of the size
     of a contour, the area, the approximation of the points, the bounding box, the min and max points, and
     the raw data.
-    
-'''
-def getConts(img, cThr = [100,150], showCanny=False, minArea=1000, filter =0, draw=False):
+    '''
     imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     imgBlur = cv2.GaussianBlur(imgGray, (5,5), 1)
     #thresh = cv2.threshold(imgBlur, 220, 255, cv2.THRESH_BINARY_INV)[1]
@@ -54,25 +54,58 @@ def getConts(img, cThr = [100,150], showCanny=False, minArea=1000, filter =0, dr
 
     return img, finalContours
 
+## TODO debug - getting working with semi- RTOS
+## TODO decide how to use image detection to measure between objects :
+    ## ie boolean enable or direct measure 
+def img_detection(ref, img, frame = None):
+    '''
+    uses SIFT technique to recognize object in image
+    Input paremeters:
+        ref - reference image to detect object from
+        img - the image to locate the object in
+        frame - a frame mask to cut off a region of the input frame
+    '''
+    imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    ref = cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY)
+    
+    sift = cv2. xfeatures2d.SIFT_create()
+    ref_kp, ref_desc = sift.detectAndCompute(ref, None)
+    keypoints_2, descriptors_2 = sift.detectAndCompute(imgGray,None)
+
+    bf = cv2.BFMatcher(cv2.NORM_L1, crossCheck=True)
+    matches = bf.match(ref_desc,descriptors_2)
+    matches = sorted(matches, key = lambda x:x.distance)
+   
+    imgMatches = cv2.drawMatches(ref, ref_kp, img, keypoints_2, matches[:50], img, flags=2)
+    return imgMatches #maybe it only has to return a boolean to enable measurement
+
+
+def frame(img, x1, x2, y1, y2):
+    '''
+    returns a frame within the specified region
+    '''
+    cropped = img[x1:x2, y1:y2]
+    return cropped
 
 def distance(a, b):
-'''
-    Returns the distance in pixels
-'''
+    '''
+        Returns the distance in pixels
+    '''
     return dist.euclidean((a[0], a[1]), (b[0], b[1]))
 
 
 def midpoint (a, b):
-'''
-    Returns the midway point 
-'''
+    '''
+        Returns the midway point 
+    '''
     return (0.5*(a[0]+b[0]), 0.5*(a[1]+b[1]))
 
+## TODO make more efficient... maybe the object detection can handle this 
 def top_bottom(img, conts):
-'''
-    returns the (x,y) coordinates of the top point of the bottom object
-    and the bottom point of the top object
-'''
+    '''
+        returns the (x,y) coordinates of the top point of the bottom object
+        and the bottom point of the top object
+    '''
     maxy = 0
     miny = np.inf
     top = 0
@@ -88,37 +121,4 @@ def top_bottom(img, conts):
     
 
 
-def reorder(points):
-'''
-    reorders points to follow the order:
-     TL, BL, TR, BR
-'''
-    newPoints = np.zeros_like(points)
-    points = points.reshape((4,2))
-    
-    add = points.sum(1)
-    diff = np.diff(points, axis=1)
-    
-    newPoints[0] = points[np.argmin(add)]
-    points[3] = points[np.argmax(add)]
-    newPoints[1] = points[np.argmin(diff)]
-    newPoints[2] = points[np.argmax(diff)]
-    return newPoints
 
-def imgWarp(img, points, w, h, pad=20):
-''' 
-    returns the frame warped to fit a given width and height
-    parmeters:
-        img - the frame to be warped
-        points - the corner points of the image to be shifted
-        w - the desired width
-        h - desired height
-        pad - the edge buffer to fit the full monitor, default = 20
-'''
-    points = reorder(points)
-    pts1 = np.float32(points)
-    pts2 = np.float32([[0,0],[w,0],[0,h],[w,h]])
-    matrix = cv2.getPerspectiveTransform(pts1, pts2)
-    imgWarp = cv2.warpPerspective(img, matrix, (w,h))
-    imgWarp = imgWarp[pad:imgWarp.shape[0]-pad, pad:imgWarp.shape[1]-pad]
-    return imgWarp

@@ -26,6 +26,7 @@ pixel_scale = 3 #TODO = D / ref_width = 5 microns - establish D with a calibrati
 
 
 
+
 ########## end Settings ############
 
 while(1):
@@ -33,6 +34,7 @@ while(1):
     else: img = cv2.imread(path)
 
     img, cts = utils.getConts(img, draw=True)
+
     if len(cts) !=0 :
         biggest = cts[0][2]
         top, bottom = utils.top_bottom(img, cts)
@@ -53,5 +55,5 @@ while(1):
     img = cv2.resize(img, (0,0), None, 0.5, 0.5)
     
         
-    cv2.imshow('Orig', img)
+    cv2.imshow('Frame', img)
     cv2.waitKey(1)
