@@ -1,59 +1,94 @@
 import cv2
-import numpy as np
-import os
+from tracker import *
+import utils as ut
 import argparse
-import utils
 
-###### Setup #######
-webcam = False
 
+# Create tracker object with Sergio's Helper Class
+tracker = EuclideanDistTracker()
+# capture object
+cap = cv2.VideoCapture(0)
+#cap.set(10, 160)
+#cap.set(3, 1920)
+#cap.set(4, 1080)
+#print(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+#print(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+startY= None
+endY = None
+
+# Object detection from Stable camera
+object_detector = cv2.createBackgroundSubtractorMOG2(history=100, varThreshold=40)
+
+
+#video source:
+webcam = True
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=False,
 	help="path to the input image")
-ap.add_argument("-w", "--ref_width", type=float, required=False,
-	help="width of the reference object in the image (in cm)")
 args = vars(ap.parse_args())
-
 path = "test_img/two.png" ##args ["image"]
 
-cap = cv2.VideoCapture(0)
-cap.set(10, 160)
-cap.set(3, 1920)
-cap.set(4, 1080)
+## Play with for camera settings
+y1 = 0
+y2 = 720
+x1 = 400
+x2 = 810
+minArea = 100
+zeroPoint = 650 #pixel position of reflection of tip, or estimate of the surface if known
 
-pixel_scale = 3 #TODO = D / ref_width = 5 microns - establish D with a calibration frame as numb pixels.
-                ## Get top bottom and 
+# change for user preference 
+startKey = ord("b") #begin calibration
+endKey = ord("f") # end calibration
 
 
+''' =============== End Settings ============ '''
 
-
-########## end Settings ############
-
-while(1):
-    if webcam: success, img = cap.read()
+while True:
+    if webcam: ret, frame = cap.read()
     else: img = cv2.imread(path)
+    height, width, _ = frame.shape
 
-    img, cts = utils.getConts(img, draw=True)
+    if not ret:
+        break
+    key = cv2.waitKey(30)
+    # Filter Region of interest -> need to change for camera Settings
+    roi = frame[y1: y2,x1: x2]
 
-    if len(cts) !=0 :
-        biggest = cts[0][2]
-        top, bottom = utils.top_bottom(img, cts)
-        
-        D = utils.distance(top, bottom)
-        mx, my = utils.midpoint(top, bottom)
-        # if(calibrate):px_per_dist = D
-        #if px_per_dist is not none: distance = D / px_per_dist
-        #print("Top: {} Bottom: {} Distance: {} ".format(top, bottom, D / pixel_scale))
+    mask, detections = ut.obj_detector(roi, minArea)
 
-        #Show distance on monitor
-        cv2.circle(img, (int(top[0]), int(top[1])), 5, (0, 0, 255), -1)
-        cv2.circle(img, (int(bottom[0]), int(bottom[1])), 5, (0, 0, 255), -1)
-        cv2.line(img, (int(top[0]), int(top[1])), (int(bottom[0]), int(bottom[1])), (0, 0, 255), 2)
-        cv2.putText(img, " {:.1f} um".format(D), (int(my), int(my - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
-        
-    img = cv2.resize(img, (0,0), None, 0.5, 0.5)
+
+    # 2. Object Tracking and Distance Computing
+    boxes_ids = tracker.update(detections)
+
+    for box_id in boxes_ids: # if cam stable - should only be 1 or 2 box_ids
+        x, y, w, h, id = box_id
+        D = ut.distance((((x + x + w) // 2),zeroPoint),(((x + x + w) // 2), y))
+        if key == startKey:
+            startY = y
+            print("Press f once tip has moved 5 microns to calibrate")
+        if key== endKey:
+            endY = y
+            print("Calibrated")
+        if startY is not None and endY is not None:
+            px_per_dist = (endY - startY) / 5 #microns
+            distance = " {:.1f} um".format(D / px_per_dist)
+            cv2.line(roi, (int(x+w/2), y), (int(x+w/2), zeroPoint),(0, 0, 255), 2)
+            cv2.putText(roi, distance, (x, ut.avg(y, zeroPoint)), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+        else:
+            distance = " {:.1f} pixels".format(D)
+            cv2.putText(roi, distance, (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+        cv2.rectangle(roi, (x, y), (x + w, y + h), (0, 255, 0), 3)
+
+    # 3 display the measurement 
+    #cv2.imshow("Region of Interest", roi)
+    #cv2.imshow("Mask", mask)
+    cv2.imshow("Frame", frame)
     
-        
-    cv2.imshow('Frame', img)
-    cv2.waitKey(1)
+
+   
+    if key == ord("q"): #s on keyboard
+        break
+
+cap.release()
+cv2.destroyAllWindows()
