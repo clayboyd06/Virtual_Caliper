@@ -1,59 +1,170 @@
-import cv2
-import numpy as np
-import os
-import argparse
-import utils
+'''
+@file RTMeasure.py
+@brief This file uses simple object detection and tracking to measure the real-time distance of two objects, determined
+        by two mouse clicks, the tip and the reflection in that order. The object tracking uses a simple class written by
+        Sergio Canu
+        for a tutorial and a file utils.py
 
-###### Setup #######
-webcam = False
+    Instructions for use:
+        The top half of the file contains settings for the thresholds of the background subtraction and the history length
+        As well as the minimum area (in pixels) of objects and the binary threshold value to include for object detection.
+        Additionally, the reference distance value is set by default to 5 (assuming the tip can be adjusted exactly 5 microns)
+        Finally, the users can change their start and end keys for calibrating the pixels per distance value.
+        display_bounding_rects can be set by the user to true if they want to see the bounding rectangles for the tip and
+        the reflection.
 
-ap = argparse.ArgumentParser()
-ap.add_argument("-i", "--image", required=False,
-	help="path to the input image")
-ap.add_argument("-w", "--ref_width", type=float, required=False,
-	help="width of the reference object in the image (in cm)")
-args = vars(ap.parse_args())
+        To use:
+            Start by clicking on the tip to display it, followed by the reflection of the tip.
+            Once both are detected, press b to store the x,y value for the tip at the beginning of calibration.
+            Move the tip 5 microns and then press f to finish calibrating.
 
-path = "test_img/two.png" ##args ["image"]
+            If at all there is a mistake or an error in the display, press r to restart.
 
-cap = cv2.VideoCapture(0)
-cap.set(10, 160)
-cap.set(3, 1920)
-cap.set(4, 1080)
-
-pixel_scale = 3 #TODO = D / ref_width = 5 microns - establish D with a calibration frame as numb pixels.
-                ## Get top bottom and 
-
-
-
-
-########## end Settings ############
-
-while(1):
-    if webcam: success, img = cap.read()
-    else: img = cv2.imread(path)
-
-    img, cts = utils.getConts(img, draw=True)
-
-    if len(cts) !=0 :
-        biggest = cts[0][2]
-        top, bottom = utils.top_bottom(img, cts)
-        
-        D = utils.distance(top, bottom)
-        mx, my = utils.midpoint(top, bottom)
-        # if(calibrate):px_per_dist = D
-        #if px_per_dist is not none: distance = D / px_per_dist
-        #print("Top: {} Bottom: {} Distance: {} ".format(top, bottom, D / pixel_scale))
-
-        #Show distance on monitor
-        cv2.circle(img, (int(top[0]), int(top[1])), 5, (0, 0, 255), -1)
-        cv2.circle(img, (int(bottom[0]), int(bottom[1])), 5, (0, 0, 255), -1)
-        cv2.line(img, (int(top[0]), int(top[1])), (int(bottom[0]), int(bottom[1])), (0, 0, 255), 2)
-        cv2.putText(img, " {:.1f} um".format(D), (int(my), int(my - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
-        
-    img = cv2.resize(img, (0,0), None, 0.5, 0.5)
+            Press q when ready to quit the program. 
     
-        
-    cv2.imshow('Frame', img)
-    cv2.waitKey(1)
+'''
+import cv2
+from tracker import *
+import utils as ut
+
+''' ====== USER SETTINGS ====='''
+## Settings for object detection 
+vThresh = 40 # for background subtraction
+hist = 100
+minArea = 200 # for ut.obj_detector
+minThresh = 254 # for ut.obj_detector
+REF_DIST = 5
+display_bounding_rects = True
+
+# change for user preference 
+startKey = ord("b") #begin calibration
+endKey = ord("f") # end calibration
+## Clay preference
+startDone=False
+endDone=True
+''' END SETTINGS '''
+
+
+
+# Create tracker object with Sergio's Helper Class
+tracker = EuclideanDistTracker()
+# capture object
+cap = cv2.VideoCapture(0)
+
+# Pixel calibration initial values 
+startX = None 
+startY= None
+endX = None
+endY = None
+
+#list of click points 
+xPt = []
+yPt = []
+tip = None #integer ID  
+refl = None #integer ID
+
+##Sets the points where the user clicks 
+def click_point(event, x, y, flags, params):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        xPt.append(x)
+        yPt.append(y)
+
+# Object detection from Stable camera
+object_detector = cv2.createBackgroundSubtractorMOG2(history=hist, varThreshold=vThresh)
+ut.print_instructions()
+''' =============== End Setup ============ '''
+
+## RT Loop 
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    #Tie clicks to the frame 
+    cv2.namedWindow('Frame')
+    cv2.setMouseCallback('Frame', click_point)
+    
+    key = cv2.waitKey(30) # 30 ms between frames 
+
+    # Detecting objects
+    mask, detections = ut.obj_detector(frame, minArea, minThresh)
+
+    #Object Tracking
+    boxes_ids = tracker.update(detections)
+
+    
+    for box_id in boxes_ids:    # Checks every tracked object - could be optimized but the loop is very fast anyway
+        x, y, w, h, id = box_id
+            
+        ## Calibrating the pixels for 5 microns
+        if key == startKey and not startDone:
+            startX = x
+            startY = y
+            print("Press 'f' once tip has moved 5 microns to finish calibration.")
+            startDone = True
+        if key== endKey and not endDone:
+            endX = x
+            endY = y
+            print("Calibrated.")
+            endDone=True
+            
+        # Set the object ID of the tip
+        if len(xPt):
+            if xPt[0] >= x and xPt[0] <= x+w and yPt[0] >= y and yPt[0] <= y + h:
+                if tip is None:
+                    tip = id
+                    xPt = []
+                    yPt = []
+                elif refl is None:
+                    refl = id  
+        # Only cares about tip
+        if tip is not None :
+            if id == tip:
+                px = int((x + x + h)/2)
+                py = (y + h) # lowest point on
+                if display_bounding_rects: 
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.putText(frame, "Tip", (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+        # Only cares about reflection
+        if refl is not None:
+            if id == refl:
+                zpX = x # leftmost point
+                zpY = y # highest point on reflection
+                if display_bounding_rects: 
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                    cv2.putText(frame, "Reflection", (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2) 
+
+            # calculates the distance    
+            D = ut.distance((zpX,zpY),(px, py))
+            '''uncomment if want the vertical distance only'''
+            #D = ut.distance((px,zpY),(px, py))
+
+            #Calculate and display distances
+            if startY is not None and endY is not None:
+                px_per_dist = abs(endY - startY) / REF_DIST #microns
+                distance = " {:.1f} microns".format(D / px_per_dist)
+                cv2.line(frame, (5, py), (10, zpY),(0, 0, 255), 2)
+                cv2.putText(frame, distance, (10, 300), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+            else:
+                cv2.putText(frame, "Press 'b' then 'f'", (10, 40), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+                cv2.putText(frame, "to calibrate", (10, 65), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
+                
+    cv2.imshow("Frame", frame)
+    
+    ## reset the initial values if 'r' is pressed
+    if key == ord("r"):
+        xPt = []
+        yPt = []
+        tip = None
+        refl = None
+        startX = None
+        startY = None
+        endX = None
+        endY = None
+        px_per_dist = None 
+
+    # Press 'q' to quit
+    if key == ord("q"): #s on keyboard
+        break
+# release the recording
+cap.release()
+cv2.destroyAllWindows()
