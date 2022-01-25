@@ -1,6 +1,6 @@
 '''
 @file RTMeasure.py
-@brief This file uses simple object detection and tracking to measure the real-time distance of two objects, determined
+@description This file uses simple object detection and tracking to measure the real-time distance of two objects, determined
         by two mouse clicks, the tip and the reflection in that order. The object tracking uses a simple class written by
         Sergio Canu
         for a tutorial and a file utils.py
@@ -39,9 +39,7 @@ display_bounding_rects = True
 # change for user preference 
 startKey = ord("b") #begin calibration
 endKey = ord("f") # end calibration
-## Clay preference
-startDone=False
-endDone=True
+
 ''' END SETTINGS '''
 
 
@@ -95,18 +93,6 @@ while True:
     for box_id in boxes_ids:    # Checks every tracked object - could be optimized but the loop is very fast anyway
         x, y, w, h, id = box_id
             
-        ## Calibrating the pixels for 5 microns
-        if key == startKey and not startDone:
-            startX = x
-            startY = y
-            print("Press 'f' once tip has moved 5 microns to finish calibration.")
-            startDone = True
-        if key== endKey and not endDone:
-            endX = x
-            endY = y
-            print("Calibrated.")
-            endDone=True
-            
         # Set the object ID of the tip
         if len(xPt):
             if xPt[0] >= x and xPt[0] <= x+w and yPt[0] >= y and yPt[0] <= y + h:
@@ -133,6 +119,18 @@ while True:
                     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
                     cv2.putText(frame, "Reflection", (x, y - 15), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2) 
 
+                    ## Calibrating the pixels for 5 microns
+            if key == startKey:
+                startX = px
+                startY = py
+                print("Press 'f' once tip has moved 5 microns to finish calibration.")
+                startDone = True
+            if key== endKey:
+                endX = px
+                endY = py
+                print("Calibrated.")
+                endDone=True
+                
             # calculates the distance    
             D = ut.distance((zpX,zpY),(px, py))
             '''uncomment if want the vertical distance only'''
